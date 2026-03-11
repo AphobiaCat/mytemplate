@@ -1,0 +1,5 @@
+#global config for activity-manager-api
+Name: activity-manager-api
+Host: 0.0.0.0
+Port: 8080
+MetricsPort: 8081

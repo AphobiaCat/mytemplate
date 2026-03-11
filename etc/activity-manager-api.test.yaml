@@ -1,0 +1,25 @@
+#test config
+Host: 0.0.0.0
+Port: 8080
+MetricsPort: 8081
+ENV: "test"
+
+# MySQL config local
+MySQL:
+  # format: userName:password@tcp(ip:port)/databaseName?configuration
+  DSN: "Dunty:123123Dunty@tcp(192.168.136.130:3306)/test?charset=utf8mb4&parseTime=true&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s"
+  # connection pool configuration
+  MaxOpenConns: 50        # max open connections (adjust based on server performance)
+  MaxIdleConns: 20        # max idle connections
+  ConnMaxLifetime: 60     # max connection lifetime (seconds), avoid long-term connection failure
+  ConnMaxIdleTime: 30     # max idle time (seconds)
+
+redis:
+  host: "10.210.0.223:6379"
+  port: 6379
+  password: ""
+  db: 0
+  timeout: 10000
+  maxIdleConns: 10
+  maxActiveConns: 100
+  idleTimeout: 1000000000
