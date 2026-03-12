@@ -3,6 +3,9 @@ Host: 0.0.0.0
 Port: 8082
 MetricsPort: 8081
 ENV: "pre"
+TrustedProxies: 
+  - "127.0.0.1"
+  - "192.168.1.1"
 
 # MySQL config local
 mysqlExample:

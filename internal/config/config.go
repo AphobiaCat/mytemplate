@@ -23,6 +23,7 @@ type ServerConf struct {
 	// TraceIgnorePaths is paths blacklist for trace middleware.
 	TraceIgnorePaths []string `json:",optional"`
 	NacosDiscovery   bool     `json:",default=false"`
+	TrustedProxies   []string `json:",optional"`
 }
 
 type MySQLConfig struct {

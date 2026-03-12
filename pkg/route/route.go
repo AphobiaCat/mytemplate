@@ -10,6 +10,7 @@ import (
 
 	"net/http"
 
+	"mytemplate/internal/global"
 	"mytemplate/pkg/log"
 	"mytemplate/pkg/redis"
 	"mytemplate/pkg/util"
@@ -222,7 +223,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 
 	rm.httpService.Use(cors.New(corsConfig))
 
-	rm.httpService.SetTrustedProxies([]string{"127.0.0.1", "192.168.1.1"}) //only trust local proxy
+	rm.httpService.SetTrustedProxies(global.AppConfig.TrustedProxies) //only trust local proxy
 
 	for _, route := range rm.routes {
 		if route.callback == nil {
