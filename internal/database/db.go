@@ -31,5 +31,5 @@ func Setup(c config.Config) {
 	}
 	DBMysqlExample = dbExample
 
-	logc.DebugError(context.Background(), "init growth mysql success")
+	logc.DebugLog(context.Background(), "init example mysql success")
 }

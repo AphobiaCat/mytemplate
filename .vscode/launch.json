@@ -11,6 +11,7 @@
             "program": "${workspaceFolder}/main.go",
             "cwd": "${workspaceFolder}",
             "args": ["./etc/activity-manager-api.local.yaml"],
+            "dlvFlags": ["--check-go-version=false"],
             "env": {},
             "buildFlags": ""
         }

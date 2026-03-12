@@ -1,7 +1,9 @@
 package route
 
 import (
+	"context"
 	"encoding/json"
+	"reflect"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -19,9 +21,8 @@ var allowHeaders = []string{"*"}
 
 const midDataKey = "MidData"
 
-type postCallback func(body string) (interface{}, bool)
-type getCallback func(params map[string]string) (interface{}, bool)
 type mitCallback func(params map[string]string) (map[string]string, bool)
+type handlerFunc func(*context.Context, []byte) (interface{}, error)
 
 type RouteManager struct {
 	httpService *gin.Engine
@@ -32,8 +33,7 @@ type RouteManager struct {
 
 type Route struct {
 	api          string
-	postRoute    postCallback
-	getRoute     getCallback
+	isGet        bool
 	recvParams   []string
 	alert        string
 	midCallbacks []mitCallback
@@ -43,6 +43,7 @@ type Route struct {
 	reqLimit     int
 	reloadLimitS int64
 	needUserIp   bool
+	callback     handlerFunc
 }
 
 func New() *RouteManager {
@@ -51,32 +52,53 @@ func New() *RouteManager {
 	return ret
 }
 
-func (rm *RouteManager) RoutePost(api string, callback postCallback) *Route {
-	rm.routes = append(rm.routes, Route{})
+func (rm *RouteManager) RoutePost(api string, handler interface{}) *Route {
 
-	ret := &(rm.routes[rm.routesLen])
-	rm.routesLen += 1
-
-	ret.api = api
-	ret.postRoute = callback
-	ret.midIndex = -1
-	ret.reqLimit = 0
-	ret.reloadLimitS = 60
+	ret := rm.RouteGet(api, handler)
+	ret.isGet = false
 
 	return ret
 }
 
-func (rm *RouteManager) RouteGet(api string, callback getCallback) *Route {
+func (rm *RouteManager) RouteGet(api string, handler interface{}) *Route {
 	rm.routes = append(rm.routes, Route{})
 
 	ret := &(rm.routes[rm.routesLen])
 	rm.routesLen += 1
 
 	ret.api = api
-	ret.getRoute = callback
+	ret.isGet = true
 	ret.midIndex = -1
 	ret.reqLimit = 0
 	ret.reloadLimitS = 60
+
+	v := reflect.ValueOf(handler)
+	t := v.Type()
+
+	reqType := t.In(1)
+
+	wrapper := func(ctx *context.Context, data []byte) (interface{}, error) {
+
+		req := reflect.New(reqType.Elem()).Interface()
+
+		err := json.Unmarshal(data, req)
+		if err != nil {
+			return nil, err
+		}
+
+		results := v.Call([]reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(req),
+		})
+
+		if !results[1].IsNil() {
+			return nil, results[1].Interface().(error)
+		}
+
+		return results[0].Interface(), nil
+	}
+
+	ret.callback = wrapper
 
 	return ret
 }
@@ -203,20 +225,25 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 	rm.httpService.SetTrustedProxies([]string{"127.0.0.1", "192.168.1.1"}) //only trust local proxy
 
 	for _, route := range rm.routes {
-		if route.getRoute != nil {
+		if route.callback == nil {
+			log.DebugError("route[", route.api, "] no handler func")
+			continue
+		}
 
-			getRouteprocess := func(context *gin.Context) {
+		if route.isGet {
 
+			getRouteprocess := func(ginContext *gin.Context) {
+				ctx := ginContext.Request.Context()
 				defer func() {
 					if err := recover(); err != nil {
 						log.DebugError("err:", err)
 					}
 				}()
 
-				clientIP := context.ClientIP()
+				clientIP := ginContext.ClientIP()
 
 				if !streamcontrol(route.api, clientIP, route.reqLimit, route.reloadLimitS) {
-					context.JSON(http.StatusOK, gin.H{
+					ginContext.JSON(http.StatusOK, gin.H{
 						"code":  -429,
 						"error": "too many requests",
 					})
@@ -226,7 +253,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 				params := make(map[string]string)
 
 				for _, keyval := range route.recvParams {
-					if val, exists := context.GetQuery(keyval); exists {
+					if val, exists := ginContext.GetQuery(keyval); exists {
 						params[keyval] = val
 					} else {
 						log.DebugError("key[", keyval, "] no exist")
@@ -237,7 +264,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 					params["ip"] = clientIP
 				}
 
-				midParamsi, _ := context.Get(midDataKey)
+				midParamsi, _ := ginContext.Get(midDataKey)
 
 				if midParams, ok := midParamsi.(map[string]string); ok {
 					for key, val := range midParams {
@@ -245,17 +272,22 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 					}
 				}
 
-				ret, succ := route.getRoute(params)
+				jsonParams, err := json.Marshal(params)
+				if err != nil {
+					log.DebugError("json marshal err:", err)
+				}
 
-				if succ {
-					context.JSON(http.StatusOK, gin.H{
+				ret, err := route.callback(&ctx, jsonParams)
+
+				if err == nil {
+					ginContext.JSON(http.StatusOK, gin.H{
 						"code": 0,
 						"data": ret,
 					})
 				} else {
-					context.JSON(http.StatusOK, gin.H{
+					ginContext.JSON(http.StatusOK, gin.H{
 						"code":  -1,
-						"error": ret,
+						"error": err.Error(),
 					})
 
 					log.DebugError(route.api, " err:", route.alert)
@@ -276,9 +308,10 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 			}
 
 			log.DebugLog("Get  --> ", route.api)
-		} else if route.postRoute != nil {
+		} else {
 
-			postRouteprocess := func(context *gin.Context) {
+			postRouteprocess := func(ginContext *gin.Context) {
+				ctx := ginContext.Request.Context()
 
 				defer func() {
 					if err := recover(); err != nil {
@@ -286,17 +319,17 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 					}
 				}()
 
-				clientIP := context.ClientIP()
+				clientIP := ginContext.ClientIP()
 
 				if !streamcontrol(route.api, clientIP, route.reqLimit, route.reloadLimitS) {
-					context.JSON(http.StatusOK, gin.H{
+					ginContext.JSON(http.StatusOK, gin.H{
 						"code":  -429,
 						"error": "too many requests",
 					})
 					return
 				}
 
-				body, err := context.GetRawData()
+				body, err := ginContext.GetRawData()
 
 				if err != nil {
 					log.DebugError("input data no exist:", body)
@@ -312,7 +345,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 						tmpmap["ip"] = clientIP
 					}
 
-					midParamsi, _ := context.Get(midDataKey)
+					midParamsi, _ := ginContext.Get(midDataKey)
 
 					if midParams, ok := midParamsi.(map[string]string); ok {
 						for key, val := range midParams {
@@ -324,20 +357,23 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 						}
 					}
 
-					bodystr = util.BuildJson(tmpmap)
+					body, err = json.Marshal(tmpmap)
+					if err != nil {
+						log.DebugError("json marshal err:", err)
+					}
 				}
 
-				ret, succ := route.postRoute(bodystr)
+				ret, err := route.callback(&ctx, body)
 
-				if succ {
-					context.JSON(http.StatusOK, gin.H{
+				if err == nil {
+					ginContext.JSON(http.StatusOK, gin.H{
 						"code": 0,
 						"data": ret,
 					})
 				} else {
-					context.JSON(http.StatusOK, gin.H{
+					ginContext.JSON(http.StatusOK, gin.H{
 						"code":  -1,
-						"error": ret,
+						"error": err.Error(),
 					})
 
 					log.DebugError(route.api, " err:", route.alert)
@@ -358,8 +394,6 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 			}
 
 			log.DebugLog("Post --> ", route.api)
-		} else {
-			log.DebugError("route no define.")
 		}
 	}
 

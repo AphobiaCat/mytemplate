@@ -359,35 +359,38 @@ func Delete(key string) {
 }
 
 func init() {
+	go func() {
+		util.Sleep(1000)
 
-	redisManager.valuelockindex = make(map[string]int)
+		redisManager.valuelockindex = make(map[string]int)
 
-	redisManager.ctx = context.Background()
+		redisManager.ctx = context.Background()
 
-	if global.AppConfig.Redis.EnableTls {
-		redisManager.rdb = redis.NewClient(&redis.Options{
-			Addr:      global.AppConfig.Redis.Host,
-			Password:  global.AppConfig.Redis.Password,
-			DB:        global.AppConfig.Redis.DB,
-			TLSConfig: &tls.Config{},
-		})
-	} else {
-		redisManager.rdb = redis.NewClient(&redis.Options{
-			Addr:     global.AppConfig.Redis.Host,
-			Password: global.AppConfig.Redis.Password,
-			DB:       global.AppConfig.Redis.DB,
-		})
-	}
+		if global.AppConfig.Redis.EnableTls {
+			redisManager.rdb = redis.NewClient(&redis.Options{
+				Addr:      global.AppConfig.Redis.Host,
+				Password:  global.AppConfig.Redis.Password,
+				DB:        global.AppConfig.Redis.DB,
+				TLSConfig: &tls.Config{},
+			})
+		} else {
+			redisManager.rdb = redis.NewClient(&redis.Options{
+				Addr:     global.AppConfig.Redis.Host,
+				Password: global.AppConfig.Redis.Password,
+				DB:       global.AppConfig.Redis.DB,
+			})
+		}
 
-	_, err := redisManager.rdb.Ping(redisManager.ctx).Result()
-	if err != nil {
-		log.DebugError("unable connet Redis:", err)
-		panic(err)
-	}
-	log.DebugLog("connect redis server succ ip[", global.AppConfig.Redis.Host, "] db[", global.AppConfig.Redis.DB, "]")
+		_, err := redisManager.rdb.Ping(redisManager.ctx).Result()
+		if err != nil {
+			log.DebugError("unable connet Redis:", err)
+			panic(err)
+		}
+		log.DebugLog("connect redis server succ ip[", global.AppConfig.Redis.Host, "] db[", global.AppConfig.Redis.DB, "]")
 
-	//rdb := redisManager.rdb
-	//log.DebugLogVAR(rdb)
+		//rdb := redisManager.rdb
+		//log.DebugLogVAR(rdb)
+	}()
 }
 
 func CloseRedis() {
