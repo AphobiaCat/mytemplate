@@ -42,7 +42,7 @@ func init() {
 	)
 }
 
-func InitMySQLEngine(ctx context.Context, dsn, replicasDsn string) (*gorm.DB, error) {
+func InitMySQLEngine(ctx context.Context, dsn, replicasDsn string, models ...interface{}) (*gorm.DB, error) {
 	fmt.Println("dsn:", dsn)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: loggerIns,
@@ -57,6 +57,11 @@ func InitMySQLEngine(ctx context.Context, dsn, replicasDsn string) (*gorm.DB, er
 			Policy:   dbresolver.RandomPolicy{},
 		}))
 	}
+
+	if err := db.AutoMigrate(models...); err != nil {
+		panic(err)
+	}
+
 	sqlDB, err := db.DB()
 	if err != nil {
 		logc.DebugError(ctx, "init mysql failed", err)
@@ -65,5 +70,6 @@ func InitMySQLEngine(ctx context.Context, dsn, replicasDsn string) (*gorm.DB, er
 	sqlDB.SetMaxOpenConns(600)
 	sqlDB.SetMaxIdleConns(300)
 	sqlDB.SetConnMaxLifetime(3 * time.Minute)
+
 	return db, sqlDB.Ping()
 }
