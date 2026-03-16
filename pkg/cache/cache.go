@@ -262,5 +262,8 @@ func DelCache(key string) {
 }
 
 func init() {
-	cacheManager.Init(global.AppConfig.Redis.Host, global.AppConfig.Redis.Password, int(global.AppConfig.Redis.DB), global.AppConfig.Redis.EnableTls)
+	go func() {
+		public.Sleep(1000)
+		cacheManager.Init(global.AppConfig.Redis.Host, global.AppConfig.Redis.Password, int(global.AppConfig.Redis.DB), global.AppConfig.Redis.EnableTls)
+	}()
 }

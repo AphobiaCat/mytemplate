@@ -1,0 +1,11 @@
+services:
+  api:
+    container_name: mytemplate
+    image: ${IMAGE_NAME}
+    restart: on-failure:3
+    network_mode: host
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "7"
