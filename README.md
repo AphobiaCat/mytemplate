@@ -8,7 +8,7 @@ Config REPOSITORY IMAGE USER_NAME USER_PASSWD in build.sh deployment.sh docker-c
 
 ```bash
 # build on local
-./build.sh MODE=test VERSION=1.0.0
+./build.sh --mode=test --version=1.0.0
 
 # deploy docker on some where
 ./deployment.sh
