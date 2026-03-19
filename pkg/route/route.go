@@ -237,7 +237,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 				ctx := ginContext.Request.Context()
 				defer func() {
 					if err := recover(); err != nil {
-						log.DebugError("err:", err)
+						log.DebugError(route.api, " err:", err)
 					}
 				}()
 
@@ -257,7 +257,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 					if val, exists := ginContext.GetQuery(keyval); exists {
 						params[keyval] = val
 					} else {
-						log.DebugError("key[", keyval, "] no exist")
+						log.DebugError(route.api, " key[", keyval, "] no exist")
 					}
 				}
 
@@ -275,7 +275,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 
 				jsonParams, err := json.Marshal(params)
 				if err != nil {
-					log.DebugError("json marshal err:", err)
+					log.DebugError(route.api, " json marshal err:", err)
 				}
 
 				ret, err := route.callback(&ctx, jsonParams)
@@ -291,7 +291,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 						"error": err.Error(),
 					})
 
-					log.DebugError(route.api, " err:", route.alert)
+					log.DebugError(route.api, "  err:", route.alert)
 				}
 			}
 
@@ -316,7 +316,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 
 				defer func() {
 					if err := recover(); err != nil {
-						log.DebugError("err:", err)
+						log.DebugError(route.api, " err:", err)
 					}
 				}()
 
@@ -333,7 +333,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 				body, err := ginContext.GetRawData()
 
 				if err != nil {
-					log.DebugError("input data no exist:", body)
+					log.DebugError(route.api, " input data no exist:", body)
 				}
 
 				bodystr := string(body)
@@ -360,7 +360,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 
 					body, err = json.Marshal(tmpmap)
 					if err != nil {
-						log.DebugError("json marshal err:", err)
+						log.DebugError(route.api, " json marshal err:", err)
 					}
 				}
 

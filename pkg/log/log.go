@@ -45,10 +45,6 @@ func DebugError(v ...interface{}) {
 
 func Log(v ...interface{}) {
 
-	if global.AppConfig.Env == "prod" {
-		return
-	}
-
 	pc, file, line, ok := runtime.Caller(1)
 	if !ok {
 		fmt.Println("Failed to get caller information")

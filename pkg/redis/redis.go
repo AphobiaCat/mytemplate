@@ -128,16 +128,26 @@ func (rm *RedisManager) BorrowValue(valuekey string) interface{} {
 	return retval
 }
 
-func (rm *RedisManager) LPUSH(rediskey string, data string) {
-	err := rm.rdb.LPush(rm.ctx, rediskey, data).Err()
+func (rm *RedisManager) LPUSH(rediskey string, datas ...string) {
+	vals := make([]interface{}, len(datas))
+	for i, data := range datas {
+		vals[i] = data
+	}
+
+	err := rm.rdb.LPush(rm.ctx, rediskey, vals...).Err()
 
 	if err != nil {
 		log.DebugError("queue set value failed", err)
 	}
 }
 
-func (rm *RedisManager) QueueSet(rediskey string, data interface{}) {
-	err := rm.rdb.LPush(rm.ctx, rediskey, util.BuildJson(data)).Err()
+func (rm *RedisManager) QueueSet(rediskey string, datas ...interface{}) {
+	vals := make([]interface{}, len(datas))
+	for i, data := range datas {
+		vals[i] = util.BuildJson(data)
+	}
+
+	err := rm.rdb.LPush(rm.ctx, rediskey, vals...).Err()
 
 	if err != nil {
 		log.DebugError("queue set value failed", err)
@@ -154,6 +164,32 @@ func (rm *RedisManager) QueueGet(rediskey string) (string, bool) {
 		return "", false
 	}
 	return task, true
+}
+
+func (rm *RedisManager) QueueGetBatch(rediskey string, count int) ([]string, bool) {
+	tasks, err := rm.rdb.RPopCount(rm.ctx, rediskey, count).Result()
+
+	if err != nil {
+		if err != redis.Nil {
+			log.DebugError("queue get batch failed", err)
+		}
+		return nil, false
+	}
+
+	if len(tasks) == 0 {
+		return nil, false
+	}
+
+	return tasks, true
+}
+
+func (rm *RedisManager) LLen(rediskey string) int64 {
+	lenofmap, err := rm.rdb.LLen(rm.ctx, rediskey).Result()
+	if err != nil {
+		log.DebugError("redis LLen err:", err)
+	}
+
+	return lenofmap
 }
 
 func (rm *RedisManager) StackSet(rediskey string, data interface{}) {
@@ -294,16 +330,24 @@ func BorrowValue(valuekey string) interface{} {
 	return redisManager.BorrowValue(valuekey)
 }
 
-func LPUSH(rediskey string, data string) {
-	redisManager.LPUSH(rediskey, data)
+func LPUSH(rediskey string, datas ...string) {
+	redisManager.LPUSH(rediskey, datas...)
 }
 
-func QueueSet(rediskey string, data interface{}) {
-	redisManager.QueueSet(rediskey, data)
+func QueueSet(rediskey string, datas ...interface{}) {
+	redisManager.QueueSet(rediskey, datas...)
 }
 
 func QueueGet(rediskey string) (string, bool) {
 	return redisManager.QueueGet(rediskey)
+}
+
+func QueueGetBatch(rediskey string, amount int) ([]string, bool) {
+	return redisManager.QueueGetBatch(rediskey, amount)
+}
+
+func LLen(rediskey string) int64 {
+	return redisManager.LLen(rediskey)
 }
 
 func StackSet(rediskey string, data interface{}) {
