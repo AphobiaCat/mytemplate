@@ -22,7 +22,6 @@ var allowHeaders = []string{"*"}
 
 const midDataKey = "MidData"
 
-type mitCallback func(params map[string]string) (map[string]string, bool)
 type handlerFunc func(*context.Context, []byte) (interface{}, error)
 
 type RouteManager struct {
@@ -37,7 +36,7 @@ type Route struct {
 	isGet        bool
 	recvParams   []string
 	alert        string
-	midCallbacks []mitCallback
+	midCallbacks []gin.HandlerFunc
 	midParams    [][]string
 	midAlert     []string
 	midIndex     int
@@ -54,21 +53,12 @@ func New() *RouteManager {
 }
 
 func (rm *RouteManager) RoutePost(api string, handler interface{}) *Route {
-
-	ret := rm.RouteGet(api, handler)
-	ret.isGet = false
-
-	return ret
-}
-
-func (rm *RouteManager) RouteGet(api string, handler interface{}) *Route {
 	rm.routes = append(rm.routes, Route{})
 
 	ret := &(rm.routes[rm.routesLen])
 	rm.routesLen += 1
 
 	ret.api = api
-	ret.isGet = true
 	ret.midIndex = -1
 	ret.reqLimit = 0
 	ret.reloadLimitS = 60
@@ -104,10 +94,36 @@ func (rm *RouteManager) RouteGet(api string, handler interface{}) *Route {
 	return ret
 }
 
-func (r *Route) RecvParams(params ...string) *Route {
-	r.recvParams = append(r.recvParams, params...)
+func (rm *RouteManager) RouteGet(api string, handler interface{}) *Route {
+	ret := rm.RoutePost(api, handler)
+	ret.isGet = true
 
-	return r
+	v := reflect.ValueOf(handler)
+	t := v.Type()
+
+	reqType := t.In(1)
+	if reqType.Kind() == reflect.Ptr {
+		reqType = reqType.Elem()
+	}
+
+	// auto parse header
+	needParams := []string{}
+	fieldMap := map[string]int{}
+
+	for i := 0; i < reqType.NumField(); i++ {
+		field := reqType.Field(i)
+
+		headerTag := field.Tag.Get("json")
+		if headerTag != "" {
+			needParams = append(needParams, headerTag)
+		}
+
+		fieldMap[field.Name] = i
+	}
+
+	ret.recvParams = needParams
+
+	return ret
 }
 
 func (r *Route) Alert(alert string) *Route {
@@ -117,11 +133,82 @@ func (r *Route) Alert(alert string) *Route {
 	return r
 }
 
-func (r *Route) Middle(middle mitCallback) *Route {
+func (r *Route) Middle(handler interface{}) *Route {
+
+	v := reflect.ValueOf(handler)
+	t := v.Type()
+
+	reqType := t.In(1)
+	if reqType.Kind() == reflect.Ptr {
+		reqType = reqType.Elem()
+	}
+
+	// auto parse header
+	needHeaders := []string{}
+	fieldMap := map[string]int{}
+
+	for i := 0; i < reqType.NumField(); i++ {
+		field := reqType.Field(i)
+
+		headerTag := field.Tag.Get("header")
+		if headerTag != "" {
+			needHeaders = append(needHeaders, headerTag)
+		}
+
+		fieldMap[field.Name] = i
+	}
+
+	middle := func(c *gin.Context) {
+		ctx := c.Request.Context()
+
+		useheaderarray := make(map[string]string)
+
+		for _, val := range needHeaders {
+			useheaderarray[val] = c.GetHeader(val)
+		}
+
+		req := reflect.New(reqType).Interface()
+
+		util.ParserJson(util.BuildJson(useheaderarray), req)
+
+		results := v.Call([]reflect.Value{
+			reflect.ValueOf(&ctx),
+			reflect.ValueOf(req),
+		})
+
+		if !results[1].IsNil() {
+			c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "error": results[1].Interface().(error)})
+			c.Abort()
+
+		} else {
+			userdata := make(map[string]string)
+
+			util.ParserJson(util.BuildJson(results[0].Interface()), &userdata)
+
+			if len(userdata) != 0 {
+				userinfointerface, exist := c.Get(midDataKey)
+
+				var newuserinfo map[string]string
+
+				if exist {
+					newuserinfo = userinfointerface.(map[string]string)
+				} else {
+					newuserinfo = make(map[string]string)
+				}
+
+				for key, val := range userdata {
+					newuserinfo[key] = val
+				}
+
+				c.Set(midDataKey, newuserinfo)
+			}
+
+			c.Next()
+		}
+	}
+
 	r.midCallbacks = append(r.midCallbacks, middle)
 	r.midIndex += 1
-	r.midParams = append(r.midParams, []string{})
-	r.midAlert = append(r.midAlert, "")
 
 	return r
 }
@@ -170,45 +257,6 @@ func streamcontrol(api string, ip string, calllimit int, reloadtime int64) bool 
 		return true
 	} else {
 		return false
-	}
-}
-
-func processroutemiddlewaremodule(process mitCallback, needheader []string, errinfo string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-
-		useheaderarray := make(map[string]string)
-
-		for _, val := range needheader {
-			useheaderarray[val] = c.GetHeader(val)
-		}
-
-		userdata, ret := process(useheaderarray)
-
-		if len(userdata) != 0 {
-			userinfointerface, exist := c.Get(midDataKey)
-
-			var newuserinfo map[string]string
-
-			if exist {
-				newuserinfo = userinfointerface.(map[string]string)
-			} else {
-				newuserinfo = make(map[string]string)
-			}
-
-			for key, val := range userdata {
-				newuserinfo[key] = val
-			}
-
-			c.Set(midDataKey, newuserinfo)
-		}
-
-		if ret {
-			c.Next()
-
-		} else {
-			c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "error": errinfo})
-			c.Abort()
-		}
 	}
 }
 
@@ -298,9 +346,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 			if len(route.midCallbacks) > 0 {
 				midsfunc := []gin.HandlerFunc{}
 
-				for index, midprocess := range route.midCallbacks {
-					midsfunc = append(midsfunc, processroutemiddlewaremodule(midprocess, route.midParams[index], route.midAlert[index]))
-				}
+				midsfunc = append(midsfunc, route.midCallbacks...)
 				midsfunc = append(midsfunc, getRouteprocess)
 
 				rm.httpService.GET(route.api, midsfunc...)
@@ -384,9 +430,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 			if len(route.midCallbacks) > 0 {
 				midsfunc := []gin.HandlerFunc{}
 
-				for index, midprocess := range route.midCallbacks {
-					midsfunc = append(midsfunc, processroutemiddlewaremodule(midprocess, route.midParams[index], route.midAlert[index]))
-				}
+				midsfunc = append(midsfunc, route.midCallbacks...)
 				midsfunc = append(midsfunc, postRouteprocess)
 
 				rm.httpService.POST(route.api, midsfunc...)

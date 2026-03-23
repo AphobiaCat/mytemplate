@@ -13,7 +13,8 @@ func Setup() {
 
 	routeManager := route.New()
 
-	routeManager.RouteGet("example/get", example.TestGetExample).NeedUserIp().RecvParams("name")
+	routeManager.RouteGet("example/get", example.TestGetExample).NeedUserIp()
+	routeManager.RouteGet("example/get/mid", example.TestGetExample).NeedUserIp().Middle(example.TestMid)
 	routeManager.RoutePost("example/post", example.TestPostExample)
 
 	bindAddr := fmt.Sprintf("%s:%d", global.AppConfig.Host, global.AppConfig.Port)
