@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"mytemplate/internal/types/example"
+	"mytemplate/pkg/log"
+	"mytemplate/pkg/route"
 	"mytemplate/pkg/util"
 )
 
@@ -25,6 +27,8 @@ func TestMid(ctx *context.Context, req *example.MidRequest) (*example.MidRespons
 }
 
 func TestPostExample(ctx *context.Context, req *example.PostExampleRequest) (ret interface{}, err error) {
+	token, _ := route.RouteGenerateJwtByStr("dunty test", 1200)
+	log.DebugLog("generate jwt token[", token, "]")
 
 	ret = &example.PostExampleResponse{
 		Message: "Hello " + util.BuildJson(req),

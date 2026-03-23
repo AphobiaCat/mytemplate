@@ -7,23 +7,19 @@ import (
 var C Config
 
 type ServerConf struct {
-	Host            string `json:",default=0.0.0.0"`
-	Port            int
-	CertFile        string `json:",optional"`
-	KeyFile         string `json:",optional"`
-	Verbose         bool   `json:",optional"`
-	EnableAccessLog bool   `json:",optional,default=true"` // enable/disable access log.
-	MaxConns        int    `json:",default=10000"`
-	MaxBytes        int64  `json:",default=1048576"`
-	// milliseconds
-	// nolint:all
-	Timeout int64 `json:",default=3000"`
-	// nolint:all
-	CpuThreshold int64 `json:",default=0,range=[0:1000)"`
-	// TraceIgnorePaths is paths blacklist for trace middleware.
-	TraceIgnorePaths []string `json:",optional"`
-	NacosDiscovery   bool     `json:",default=false"`
-	TrustedProxies   []string `json:",optional"`
+	Host             string `json:"host"`
+	Port             int
+	CertFile         string `json:"cert_file"`
+	KeyFile          string `json:"key_file"`
+	Verbose          bool   `json:"verbose"`
+	EnableAccessLog  bool   `json:"enable_access_log"` // enable/disable access log.
+	MaxConns         int    `json:"max_conns"`
+	MaxBytes         int64  `json:"max_bytes"`
+	Timeout          int64
+	CpuThreshold     int64
+	TraceIgnorePaths []string
+	NacosDiscovery   bool
+	TrustedProxies   []string
 }
 
 type MySQLConfig struct {
@@ -34,22 +30,21 @@ type MySQLConfig struct {
 
 type RedisConf struct {
 	Host             string
-	ReadOnly         bool   `json:",optional"`
-	RouteByLatency   bool   `json:",optional"`
-	RouteRandomly    bool   `json:",optional"`
-	SingleReplicaSet bool   `json:",optional"`
-	Type             string `json:",default=node,options=node|cluster"`
-	Password         string `json:",optional"`
-	EnableTls        bool   `json:",optional"`
-	EnableBreaker    bool   `json:",default=true"`
-	NonBlock         bool   `json:",default=true"`
-	// PingTimeout is the timeout for ping redis.
-	PingTimeout    time.Duration `json:",default=1s"`
-	DB             int           `json:",default=0"`
-	PoolSize       int           `json:",optional"`
-	MaxActiveConns int           `json:",optional"`
-	MaxIdleConns   int           `json:",optional"`
-	MinIdleConns   int           `json:",optional"`
+	ReadOnly         bool
+	RouteByLatency   bool
+	RouteRandomly    bool
+	SingleReplicaSet bool
+	Type             string
+	Password         string
+	EnableTls        bool
+	EnableBreaker    bool
+	NonBlock         bool
+	PingTimeout      time.Duration
+	DB               int
+	PoolSize         int
+	MaxActiveConns   int
+	MaxIdleConns     int
+	MinIdleConns     int
 }
 
 type Config struct {
@@ -57,4 +52,5 @@ type Config struct {
 	MysqlExample MySQLConfig
 	Redis        RedisConf
 	Env          string
+	ServerJwtKey string
 }

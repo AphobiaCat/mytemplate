@@ -26,3 +26,5 @@ redis:
   maxIdleConns: 10
   maxActiveConns: 100
   idleTimeout: 1000000000
+
+ServerJwtKey: my_secret_key

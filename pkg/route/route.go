@@ -72,8 +72,10 @@ func (rm *RouteManager) RoutePost(api string, handler interface{}) *Route {
 	wrapper := func(ctx *context.Context, data []byte) (interface{}, error) {
 
 		req := reflect.New(reqType.Elem()).Interface()
+		log.DebugError(req)
 
 		err := json.Unmarshal(data, req)
+
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +229,7 @@ func (r *Route) Middle(handler interface{}) *Route {
 		if !results[1].IsNil() {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":  -1,
-				"error": results[1].Interface().(error),
+				"error": results[1].Interface().(error).Error(),
 			})
 			c.Abort()
 			return
@@ -481,11 +483,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 
 					if midParams, ok := midParamsi.(map[string]string); ok {
 						for key, val := range midParams {
-							if key == "jwt" {
-								tmpmap[key] = json.RawMessage(val)
-							} else {
-								tmpmap[key] = val
-							}
+							tmpmap[key] = val
 						}
 					}
 
