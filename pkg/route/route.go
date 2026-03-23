@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strconv"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -139,37 +140,84 @@ func (r *Route) Middle(handler interface{}) *Route {
 	t := v.Type()
 
 	reqType := t.In(1)
+	isPtr := false
+
 	if reqType.Kind() == reflect.Ptr {
 		reqType = reqType.Elem()
+		isPtr = true
 	}
 
-	// auto parse header
-	needHeaders := []string{}
-	fieldMap := map[string]int{}
+	// pre parse
+	type fieldInfo struct {
+		index int
+		key   string
+		kind  reflect.Kind
+	}
+
+	fields := make([]fieldInfo, 0)
 
 	for i := 0; i < reqType.NumField(); i++ {
 		field := reqType.Field(i)
 
 		headerTag := field.Tag.Get("header")
-		if headerTag != "" {
-			needHeaders = append(needHeaders, headerTag)
+		if headerTag == "" {
+			continue
 		}
 
-		fieldMap[field.Name] = i
+		fields = append(fields, fieldInfo{
+			index: i,
+			key:   headerTag,
+			kind:  field.Type.Kind(),
+		})
 	}
 
 	middle := func(c *gin.Context) {
 		ctx := c.Request.Context()
 
-		useheaderarray := make(map[string]string)
-
-		for _, val := range needHeaders {
-			useheaderarray[val] = c.GetHeader(val)
+		// create req
+		var reqValue reflect.Value
+		if isPtr {
+			reqValue = reflect.New(reqType)
+		} else {
+			reqValue = reflect.New(reqType).Elem()
 		}
 
-		req := reflect.New(reqType).Interface()
+		for _, f := range fields {
+			val := c.GetHeader(f.key)
+			if val == "" {
+				continue
+			}
 
-		util.ParserJson(util.BuildJson(useheaderarray), req)
+			var target reflect.Value
+			if reqValue.Kind() == reflect.Ptr {
+				target = reqValue.Elem()
+			} else {
+				target = reqValue
+			}
+
+			field := target.Field(f.index)
+			if !field.CanSet() {
+				continue
+			}
+
+			switch f.kind {
+			case reflect.String:
+				field.SetString(val)
+
+			case reflect.Int, reflect.Int64, reflect.Int32:
+				if iv, err := strconv.ParseInt(val, 10, 64); err == nil {
+					field.SetInt(iv)
+				}
+
+			case reflect.Bool:
+				if bv, err := strconv.ParseBool(val); err == nil {
+					field.SetBool(bv)
+				}
+			}
+		}
+
+		var req interface{}
+		req = reqValue.Interface()
 
 		results := v.Call([]reflect.Value{
 			reflect.ValueOf(&ctx),
@@ -177,34 +225,71 @@ func (r *Route) Middle(handler interface{}) *Route {
 		})
 
 		if !results[1].IsNil() {
-			c.JSON(http.StatusUnauthorized, gin.H{"code": -1, "error": results[1].Interface().(error)})
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":  -1,
+				"error": results[1].Interface().(error),
+			})
 			c.Abort()
+			return
+		}
 
-		} else {
-			userdata := make(map[string]string)
+		userdata := func(data interface{}) map[string]string {
+			result := make(map[string]string)
 
-			util.ParserJson(util.BuildJson(results[0].Interface()), &userdata)
-
-			if len(userdata) != 0 {
-				userinfointerface, exist := c.Get(midDataKey)
-
-				var newuserinfo map[string]string
-
-				if exist {
-					newuserinfo = userinfointerface.(map[string]string)
-				} else {
-					newuserinfo = make(map[string]string)
-				}
-
-				for key, val := range userdata {
-					newuserinfo[key] = val
-				}
-
-				c.Set(midDataKey, newuserinfo)
+			v := reflect.ValueOf(data)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
 			}
 
-			c.Next()
+			t := v.Type()
+
+			for i := 0; i < v.NumField(); i++ {
+				field := t.Field(i)
+				value := v.Field(i)
+
+				if !value.CanInterface() {
+					continue
+				}
+
+				key := field.Tag.Get("json")
+				if key == "" {
+					key = field.Name
+				}
+
+				switch value.Kind() {
+				case reflect.String:
+					result[key] = value.String()
+
+				case reflect.Int, reflect.Int64, reflect.Int32:
+					result[key] = strconv.FormatInt(value.Int(), 10)
+
+				case reflect.Bool:
+					result[key] = strconv.FormatBool(value.Bool())
+				}
+			}
+
+			return result
+		}(results[0].Interface())
+
+		if len(userdata) != 0 {
+			userinfointerface, exist := c.Get(midDataKey)
+
+			var newuserinfo map[string]string
+
+			if exist {
+				newuserinfo = userinfointerface.(map[string]string)
+			} else {
+				newuserinfo = make(map[string]string)
+			}
+
+			for key, val := range userdata {
+				newuserinfo[key] = val
+			}
+
+			c.Set(midDataKey, newuserinfo)
 		}
+
+		c.Next()
 	}
 
 	r.midCallbacks = append(r.midCallbacks, middle)

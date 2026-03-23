@@ -16,6 +16,7 @@ func Setup() {
 	routeManager.RouteGet("example/get", example.TestGetExample).NeedUserIp()
 	routeManager.RouteGet("example/get/mid", example.TestGetExample).NeedUserIp().Middle(example.TestMid)
 	routeManager.RoutePost("example/post", example.TestPostExample)
+	routeManager.RoutePost("example/post/mid", example.TestPostExample).NeedUserIp().Middle(example.TestMid)
 
 	bindAddr := fmt.Sprintf("%s:%d", global.AppConfig.Host, global.AppConfig.Port)
 	log.DebugLog("Bind address: ", bindAddr)

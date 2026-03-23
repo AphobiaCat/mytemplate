@@ -9,6 +9,9 @@ type GetExampleRequest struct {
 
 type PostExampleRequest struct {
 	Name string `json:"name"`
+	Ip   string `header:"ip"`
+	User string `header:"user"`
+	Msg  string `header:"msg"`
 }
 
 type GetExampleResponse struct {
