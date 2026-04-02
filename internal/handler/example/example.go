@@ -36,3 +36,11 @@ func TestPostExample(ctx *context.Context, req *example.PostExampleRequest) (ret
 
 	return
 }
+
+func TestSocketExample(msg string) (ret string, err error) {
+	return
+}
+
+func TestSocketExampleNoreturn(msg string) {
+
+}

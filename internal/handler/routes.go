@@ -6,10 +6,28 @@ import (
 	"mytemplate/internal/handler/example"
 	"mytemplate/pkg/log"
 	"mytemplate/pkg/route"
+	"mytemplate/pkg/socket"
 )
+
+func SetUpSocket() {
+	manager := socket.NewManager()
+
+	tcpManager := manager.NewProxyManager(socket.SocketTypeTcp, "8877")
+	udpManager := manager.NewProxyManager(socket.SocketTypeUdp, "7788")
+
+	tcpManager.Route("example/tcp", example.TestSocketExample)
+	tcpManager.Route("example/tcp/noreturn", example.TestSocketExampleNoreturn)
+
+	udpManager.Route("example/udp", example.TestSocketExample)
+	udpManager.Route("example/udp/noreturn", example.TestSocketExampleNoreturn)
+
+	manager.InitAll()
+}
 
 func Setup() {
 	// setup server routes
+
+	SetUpSocket()
 
 	routeManager := route.New()
 
