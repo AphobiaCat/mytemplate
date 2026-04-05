@@ -3,6 +3,7 @@ package socket
 import (
 	"fmt"
 	"mytemplate/pkg/log"
+	"sync"
 )
 
 /*
@@ -10,12 +11,8 @@ import (
 	Api|Header|Body
 */
 
-type routeCallbackType1 func(string) (string, error)
-type routeCallbackType2 func(string)
-type routeCallbackWrap func(string) (ret string, err error, needReturn bool)
-
 type hostManager struct {
-	proxy    proxyManager
+	proxy    proxyHost
 	bindPort string
 	routes   map[string]routeCallbackWrap
 }
@@ -25,13 +22,13 @@ type socketRouteManager struct {
 	managersIndex int
 }
 
-func (srm *socketRouteManager) NewProxyManager(socketType int, bindPort string) *hostManager {
+func (srm *socketRouteManager) NewProxyHost(socketType int, bindPort string) *hostManager {
 	ret := &hostManager{
 		bindPort: bindPort,
 		routes:   make(map[string]routeCallbackWrap),
 	}
 
-	var proxy proxyManager
+	var proxy proxyHost
 
 	switch socketType {
 	case SocketTypeTcp:
@@ -52,12 +49,14 @@ func (srm *socketRouteManager) NewProxyManager(socketType int, bindPort string) 
 }
 
 func (srm *socketRouteManager) InitAll() {
-	for _, proxyManager := range srm.hostManagers {
+	for _, proxyHost := range srm.hostManagers {
 		go func() {
-			proxy := proxyManager.proxy
+			proxy := proxyHost.proxy
 
 			clientsMap := make(map[string]proxyClient)
-			proxy.Init(proxyManager.bindPort)
+			var mapMutex sync.Mutex
+
+			proxy.Init(proxyHost.bindPort)
 
 			for {
 				client, clientAddr, err := proxy.NewClient()
@@ -67,9 +66,14 @@ func (srm *socketRouteManager) InitAll() {
 					continue
 				}
 
-				if _, exist := clientsMap[clientAddr]; !exist {
+				mapMutex.Lock()
+				_, exist := clientsMap[clientAddr]
+
+				if !exist {
 					clientsMap[clientAddr] = client
+					go commonProcess(client, proxyHost.routes, clientsMap, clientAddr, &mapMutex)
 				}
+				mapMutex.Unlock()
 			}
 		}()
 	}
@@ -79,16 +83,16 @@ func (o *hostManager) Route(api string, handler interface{}) {
 	var wrapFunc routeCallbackWrap
 
 	switch handlerFunc := handler.(type) {
-	case func(string) (string, error):
-		wrapFunc = func(input string) (string, error, bool) {
-			ret, err := handlerFunc(input)
+	case func(string) (*ClientReturn, error):
+		wrapFunc = func(input string) (ret *ClientReturn, err error, needReturn bool) {
+			ret, err = handlerFunc(input)
 			return ret, err, true
 		}
 
 	case func(string):
-		wrapFunc = func(input string) (string, error, bool) {
+		wrapFunc = func(input string) (ret *ClientReturn, err error, needReturn bool) {
 			handlerFunc(input)
-			return "", nil, false
+			return nil, nil, false
 		}
 	default:
 		log.DebugError("handler[", handlerFunc, "] func type no support")
@@ -99,8 +103,14 @@ func (o *hostManager) Route(api string, handler interface{}) {
 	log.Log("Socket--> ", api)
 }
 
-func commonProcess(client proxyClient, handlers map[string]routeCallbackWrap) {
-	defer client.Close()
+func commonProcess(client proxyClient, handlers map[string]routeCallbackWrap, clientMaps map[string]proxyClient, clientAddr string, mapLock *sync.Mutex) {
+	defer func() {
+		client.Close()
+		mapLock.Lock()
+		defer mapLock.Unlock()
+
+		delete(clientMaps, clientAddr)
+	}()
 	for {
 		msg, err := client.RecvMsg()
 		if err != nil {
@@ -144,8 +154,8 @@ func commonProcess(client proxyClient, handlers map[string]routeCallbackWrap) {
 			}
 		}
 
-		if len(header) == 0 || len(content) == 0 || msgLenErr {
-			log.DebugError("header or content no exist")
+		if len(content) == 0 || msgLenErr {
+			log.DebugError("content no exist")
 			continue
 		}
 
@@ -159,7 +169,7 @@ func commonProcess(client proxyClient, handlers map[string]routeCallbackWrap) {
 		}
 
 		if needReturn {
-			err = client.SendMsg(ret)
+			err = client.SendMsg(ret.Api + "|" + ret.Header + "|" + ret.Content)
 			if err != nil {
 				log.DebugError("client err ", err)
 				return

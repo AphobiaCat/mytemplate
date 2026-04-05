@@ -1,19 +1,26 @@
 package socket
 
 import (
+	"encoding/binary"
+	"fmt"
+	"io"
 	"mytemplate/pkg/log"
 	"net"
 )
 
+/*****************************************************************************
+	For host manager to manager clients
+*****************************************************************************/
+
 type tcpRouteManager struct {
-	newClientsChan chan *tcpRouteClient
-	errChan        chan error
+	ln net.Listener
 }
 
 type tcpRouteClient struct {
-	conn   net.Conn
-	buffer []byte
-	addr   string
+	conn       net.Conn
+	sizeBuffer []byte
+	buffer     []byte
+	addr       string
 }
 
 func (o *tcpRouteManager) Init(bindPort string) {
@@ -22,39 +29,23 @@ func (o *tcpRouteManager) Init(bindPort string) {
 		log.DebugError("Error listening:", err)
 		panic(err)
 	}
-	defer ln.Close()
+	o.ln = ln
 
 	log.Log("TCP server is listening on port ", bindPort, "...")
-
-	o.newClientsChan = make(chan *tcpRouteClient, 10)
-	o.errChan = make(chan error, 10)
-
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			log.DebugError("Error accepting connection: ", err)
-			continue
-		}
-
-		tmp_client := &tcpRouteClient{
-			conn:   conn,
-			buffer: make([]byte, 1024),
-			addr:   conn.RemoteAddr().String(),
-		}
-
-		o.newClientsChan <- tmp_client
-	}
 }
 
 func (o *tcpRouteManager) NewClient() (client proxyClient, addr string, err error) {
-	select {
-	case newClient := <-o.newClientsChan:
-		addr = newClient.addr
-		client = newClient
+	conn, err := o.ln.Accept()
 
-	case routeErr := <-o.errChan:
-		err = routeErr
-		log.DebugError("udpRouteManager get error ", err)
+	if err != nil {
+		return
+	}
+
+	client = &tcpRouteClient{
+		conn:       conn,
+		sizeBuffer: make([]byte, 4),
+		buffer:     make([]byte, 1024),
+		addr:       conn.RemoteAddr().String(),
 	}
 
 	return
@@ -66,13 +57,121 @@ func (o *tcpRouteClient) Close() {
 }
 
 func (o *tcpRouteClient) RecvMsg() (msg string, err error) {
-	_, err = o.conn.Read(o.buffer)
-	msg = string(o.buffer)
+
+	_, err = io.ReadFull(o.conn, o.sizeBuffer)
+	if err != nil {
+		return
+	}
+
+	msgLen := int(binary.BigEndian.Uint32(o.sizeBuffer))
+
+	if cap(o.buffer) < msgLen {
+		o.buffer = make([]byte, msgLen)
+	}
+
+	data := o.buffer[:msgLen]
+
+	_, err = io.ReadFull(o.conn, data)
+	if err != nil {
+		return
+	}
+
+	msg = string(data)
+
 	return
+
+}
+
+func writeFull(conn net.Conn, data []byte) error {
+	total := 0
+	for total < len(data) {
+		n, err := conn.Write(data[total:])
+		if err != nil {
+			return err
+		}
+		total += n
+	}
+	return nil
 }
 
 func (o *tcpRouteClient) SendMsg(msg string) (err error) {
-	_, err = o.conn.Write([]byte(msg))
+	data := []byte(msg)
 
+	// send size frist
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+
+	if err = writeFull(o.conn, lenBuf); err != nil {
+		return
+	}
+
+	err = writeFull(o.conn, data)
+
+	return
+}
+
+/*****************************************************************************
+	For User Client to connect to host
+*****************************************************************************/
+
+type tcpUserClient struct {
+	conn       net.Conn
+	sizeBuffer []byte
+	buffer     []byte
+}
+
+func (o *tcpUserClient) Init(url string) (err error) {
+	o.conn, err = net.Dial("tcp", url)
+	if err != nil {
+		err = fmt.Errorf("tcp connect failed: %s", err.Error())
+	}
+
+	o.sizeBuffer = make([]byte, 4)
+	o.buffer = make([]byte, 1024)
+
+	return
+}
+
+func (o *tcpUserClient) Close() {
+	o.conn.Close()
+}
+
+func (o *tcpUserClient) RecvMsg() (msg string, err error) {
+	_, err = io.ReadFull(o.conn, o.sizeBuffer)
+	if err != nil {
+		return
+	}
+
+	msgLen := int(binary.BigEndian.Uint32(o.sizeBuffer))
+
+	if cap(o.buffer) < msgLen {
+		o.buffer = make([]byte, msgLen)
+	}
+
+	data := o.buffer[:msgLen]
+
+	_, err = io.ReadFull(o.conn, data)
+	if err != nil {
+		return
+	}
+
+	msg = string(data)
+
+	return
+}
+
+func (o *tcpUserClient) SendMsg(msg string) (err error) {
+
+	data := []byte(msg)
+
+	// send size frist
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+
+	if err = writeFull(o.conn, lenBuf); err != nil {
+		return
+	}
+
+	err = writeFull(o.conn, data)
 	return
 }
