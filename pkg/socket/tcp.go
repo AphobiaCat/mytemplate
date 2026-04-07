@@ -56,7 +56,7 @@ func (o *tcpRouteClient) Close() {
 	o.conn.Close()
 }
 
-func (o *tcpRouteClient) RecvMsg() (msg string, err error) {
+func (o *tcpRouteClient) recvMsg() (msg string, err error) {
 
 	_, err = io.ReadFull(o.conn, o.sizeBuffer)
 	if err != nil {

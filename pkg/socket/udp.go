@@ -102,7 +102,7 @@ func (o *udpRouteClient) Close() {
 	log.DebugLog("udp user[", o.addr.String(), "] close")
 }
 
-func (o *udpRouteClient) RecvMsg() (msg string, err error) {
+func (o *udpRouteClient) recvMsg() (msg string, err error) {
 	msg = <-o.recvMsgChan
 	return
 }

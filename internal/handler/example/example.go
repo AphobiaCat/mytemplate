@@ -43,19 +43,32 @@ func TestPostExample(ctx *context.Context, req *example.PostExampleRequest) (ret
 var socketHaveReturnApi = "example/socket"
 var socketNotReturnApi = "example/socket/notreturn"
 
-func TestSocketExample(msg string) (ret *socket.ClientReturn, err error) {
+func TestSocketExample(client socket.Client, msg string) (err error) {
+	log.DebugLog("TestSocketExample recv msg ", msg)
+
+	err = client.SendMsg(socketNotReturnApi, "^_^ "+msg)
+
+	return
+}
+
+func TestSocketExampleNoreturn(client socket.Client, msg string) (err error) {
+	log.DebugLog("TestSocketExampleNoreturn recv msg ", msg)
+	return
+}
+
+func TestClientSocketExample(msg string) (ret *socket.ClientReturn, err error) {
 	ret = &socket.ClientReturn{
 		Api:     socketNotReturnApi,
 		Content: "haah " + msg,
 	}
 
-	log.DebugLog("TestSocketExample recv msg ", msg)
+	log.DebugLog("TestClientSocketExample recv msg ", msg)
 
 	return
 }
 
-func TestSocketExampleNoreturn(msg string) {
-	log.DebugLog("TestSocketExampleNoreturn recv msg ", msg)
+func TestClientSocketExampleNoreturn(msg string) {
+	log.DebugLog("TestClientSocketExampleNoreturn recv msg ", msg)
 }
 
 func setupSocketServer() {
@@ -99,8 +112,8 @@ func setupSocketClient() {
 	// udpClient.SendMsg(socketNotReturnApi, "", "hello")
 
 	tcpClient := clientManager.NewProxyClient(socket.SocketTypeTcp, "127.0.0.1:8877")
-	tcpClient.ProcessCallback(socketHaveReturnApi, TestSocketExample)
-	tcpClient.ProcessCallback(socketNotReturnApi, TestSocketExampleNoreturn)
+	tcpClient.ProcessCallback(socketHaveReturnApi, TestClientSocketExample)
+	tcpClient.ProcessCallback(socketNotReturnApi, TestClientSocketExampleNoreturn)
 	tcpClient.Init()
 	tcpClient.SendMsg(socketHaveReturnApi, "", "hello")
 	tcpClient.SendMsg(socketNotReturnApi, "", "hello")
@@ -114,7 +127,7 @@ func setupSocketClient() {
 func Test() {
 	go setupSocketServer()
 	// go setupHttpServer()
-	// go setupSocketClient()
+	go setupSocketClient()
 
 	for {
 		util.Sleep(10000)

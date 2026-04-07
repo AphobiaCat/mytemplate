@@ -13,8 +13,13 @@ type proxyHost interface {
 
 type proxyClient interface {
 	Close()
-	RecvMsg() (msg string, err error)
+	recvMsg() (msg string, err error)
 	SendMsg(msg string) (err error)
+}
+
+type Client struct {
+	header string
+	inner  proxyClient
 }
 
 type proxyUserClient interface {
@@ -29,6 +34,8 @@ type ClientReturn struct {
 	Header  string `json:"header"`
 	Content string `json:"content"`
 }
+
+type routeCallback func(client Client, recvMsg string) (err error)
 
 type routeCallbackType1 func(string) (*ClientReturn, error)
 type routeCallbackType2 func(string)

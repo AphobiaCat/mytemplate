@@ -179,7 +179,7 @@ func (o *clientManager) recvMsg() {
 			continue
 		}
 
-		if needReturn {
+		if needReturn && ret != nil {
 			err = o.SendMsg(ret.Api, ret.Header, ret.Content)
 			if err != nil {
 				log.DebugError("client err ", err)

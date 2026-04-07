@@ -14,7 +14,7 @@ import (
 type hostManager struct {
 	proxy    proxyHost
 	bindPort string
-	routes   map[string]routeCallbackWrap
+	routes   map[string]routeCallback
 }
 
 type socketRouteManager struct {
@@ -25,7 +25,7 @@ type socketRouteManager struct {
 func (srm *socketRouteManager) NewProxyHost(socketType int, bindPort string) *hostManager {
 	ret := &hostManager{
 		bindPort: bindPort,
-		routes:   make(map[string]routeCallbackWrap),
+		routes:   make(map[string]routeCallback),
 	}
 
 	var proxy proxyHost
@@ -79,31 +79,22 @@ func (srm *socketRouteManager) InitAll() {
 	}
 }
 
-func (o *hostManager) Route(api string, handler interface{}) {
-	var wrapFunc routeCallbackWrap
-
-	switch handlerFunc := handler.(type) {
-	case func(string) (*ClientReturn, error):
-		wrapFunc = func(input string) (ret *ClientReturn, err error, needReturn bool) {
-			ret, err = handlerFunc(input)
-			return ret, err, true
-		}
-
-	case func(string):
-		wrapFunc = func(input string) (ret *ClientReturn, err error, needReturn bool) {
-			handlerFunc(input)
-			return nil, nil, false
-		}
-	default:
-		log.DebugError("handler[", handlerFunc, "] func type no support")
-	}
-
-	o.routes[api] = wrapFunc
+func (o *hostManager) Route(api string, handler routeCallback) {
+	o.routes[api] = handler
 
 	log.Log("Socket--> ", api)
 }
 
-func commonProcess(client proxyClient, handlers map[string]routeCallbackWrap, clientMaps map[string]proxyClient, clientAddr string, mapLock *sync.Mutex) {
+func (o *Client) Close() {
+	o.inner.Close()
+}
+
+func (o *Client) SendMsg(api, msg string) (err error) {
+	err = o.inner.SendMsg(api + "|" + o.header + "|" + msg)
+	return
+}
+
+func commonProcess(client proxyClient, handlers map[string]routeCallback, clientMaps map[string]proxyClient, clientAddr string, mapLock *sync.Mutex) {
 	defer func() {
 		client.Close()
 		mapLock.Lock()
@@ -111,8 +102,12 @@ func commonProcess(client proxyClient, handlers map[string]routeCallbackWrap, cl
 
 		delete(clientMaps, clientAddr)
 	}()
+
+	var clientInfo Client
+	clientInfo.inner = client
+
 	for {
-		msg, err := client.RecvMsg()
+		msg, err := client.recvMsg()
 		if err != nil {
 			log.DebugError("client err ", err)
 			return
@@ -159,21 +154,12 @@ func commonProcess(client proxyClient, handlers map[string]routeCallbackWrap, cl
 			continue
 		}
 
-		// wait to use
-		_ = header
+		clientInfo.header = header
 
-		ret, err, needReturn := handlers[api](content)
+		err = handlers[api](clientInfo, content)
 		if err != nil {
-			log.DebugError("client err ", err)
-			continue
-		}
-
-		if needReturn {
-			err = client.SendMsg(ret.Api + "|" + ret.Header + "|" + ret.Content)
-			if err != nil {
-				log.DebugError("client err ", err)
-				return
-			}
+			log.DebugError("client handle err:", err.Error())
+			return
 		}
 	}
 }
