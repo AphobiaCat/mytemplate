@@ -27,7 +27,7 @@ type StandardcmCache struct {
 	Wait bool   `json:"wait"` //wait frist
 }
 
-type NewCacheFunc func() interface{}
+type NewCacheFunc func() (interface{}, error)
 
 func (cm *CacheManager) Init(serverip string, password string, DB int, enabletls bool) {
 
@@ -66,21 +66,23 @@ func (cm *CacheManager) SetCache(key string, value interface{}, configtime ...in
 
 	nowtime := public.NowTimeS()
 
-	var newcachedata StandardcmCache
+	var newCacheData StandardcmCache
 
-	newcachedata.D = public.BuildJson(value)
-	newcachedata.L = nowtime + maxalivetime //keep no update by get cache default force update time
-	newcachedata.LW = 0
-	newcachedata.W = false
-	newcachedata.Wait = false
+	newCacheData.D = public.BuildJson(value)
+	newCacheData.L = nowtime + maxalivetime //keep no update by get cache default force update time
+	newCacheData.LW = 0
+	newCacheData.W = false
+	newCacheData.Wait = false
 
-	err := cm.rdb.Set(cm.ctx, key, public.BuildJson(newcachedata), time.Duration(maxalivetime)).Err()
+	err := cm.rdb.Set(cm.ctx, key, public.BuildJson(newCacheData), time.Duration(maxalivetime)).Err()
 	if err != nil {
 		log.DebugError("set value failed", err)
 	}
 }
 
-func (cm *CacheManager) GetCache(key string, newcachefunc NewCacheFunc, configtime ...int64) string {
+func (cm *CacheManager) GetCache(key string, newCacheFunc NewCacheFunc, configtime ...int64) (ret string, err error) {
+	ret = ""
+
 	forceupdatetime := int64(60 * 2)
 	maxworktime := int64(60 * 5)
 	maxalivetime := int64(1000 * 1000 * 1000 * 60 * 10) //ns -> us -> ms -> s
@@ -108,32 +110,33 @@ func (cm *CacheManager) GetCache(key string, newcachefunc NewCacheFunc, configti
 			retval = ""
 		} else {
 			log.DebugError("get value failed", err)
-			return ""
+			return
 		}
 	}
 
 	//log.DebugLog("retval : ", retval)
 
-	var cachedata StandardcmCache
-	public.ParserJson(retval, &cachedata)
+	var cacheData StandardcmCache
+	public.ParserJson(retval, &cacheData)
 
-	if cachedata.Wait == true {
+	if cacheData.Wait == true {
 
+		startWaitTime := public.NowTimeS()
 		for {
-			retval, err := cm.rdb.Get(cm.ctx, key).Result()
+			ret, err = cm.rdb.Get(cm.ctx, key).Result()
 
 			if err != nil {
 				log.DebugError("get value failed", err)
-				return retval
+				return
 			}
 
-			public.ParserJson(retval, &cachedata)
+			public.ParserJson(ret, &cacheData)
 
-			if cachedata.D != "" {
+			if cacheData.D != "" {
 				break
 			}
 
-			if cachedata.Wait == false {
+			if cacheData.Wait == false {
 				break
 			}
 
@@ -141,21 +144,21 @@ func (cm *CacheManager) GetCache(key string, newcachefunc NewCacheFunc, configti
 
 			nowtime := public.NowTimeS()
 
-			if nowtime-nowtime > 10000 {
+			if nowtime-startWaitTime > 600 {
 				cm.rdb.Del(cm.ctx, key)
 				break
 			}
 		}
 	}
 
-	if cachedata.D == "" {
+	if cacheData.D == "" {
 
-		var newcachedata StandardcmCache
-		newcachedata.Wait = true
-		err := cm.rdb.Set(cm.ctx, key, public.BuildJson(newcachedata), time.Duration(maxalivetime)).Err()
+		var newCacheData StandardcmCache
+		newCacheData.Wait = true
+		err = cm.rdb.Set(cm.ctx, key, public.BuildJson(newCacheData), time.Duration(maxalivetime)).Err()
 		if err != nil {
 			log.DebugError("set value failed", err)
-			return ""
+			return
 		}
 
 		defer func() {
@@ -165,37 +168,41 @@ func (cm *CacheManager) GetCache(key string, newcachefunc NewCacheFunc, configti
 			}
 		}()
 
-		newdata := newcachefunc()
+		var newData interface{}
+		newData, err = newCacheFunc()
+		if err != nil {
 
-		newdatastr := public.BuildJson(newdata)
+		}
+
+		ret = public.BuildJson(newData)
 
 		nowtime = public.NowTimeS()
 
-		newcachedata.D = newdatastr
-		newcachedata.L = nowtime
-		newcachedata.LW = 0
-		newcachedata.W = false
-		newcachedata.Wait = false
+		newCacheData.D = ret
+		newCacheData.L = nowtime
+		newCacheData.LW = 0
+		newCacheData.W = false
+		newCacheData.Wait = false
 
-		err = cm.rdb.Set(cm.ctx, key, public.BuildJson(newcachedata), time.Duration(maxalivetime)).Err()
+		err = cm.rdb.Set(cm.ctx, key, public.BuildJson(newCacheData), time.Duration(maxalivetime)).Err()
 		if err != nil {
 			log.DebugError("set value failed", err)
-			return ""
+			return
 		}
 
-		return newdatastr
+		return
 
-	} else if ((nowtime-cachedata.L >= forceupdatetime) && !cachedata.W) || ((cachedata.LW != 0) && (nowtime-cachedata.LW >= maxworktime)) {
+	} else if ((nowtime-cacheData.L >= forceupdatetime) && !cacheData.W) || ((cacheData.LW != 0) && (nowtime-cacheData.LW >= maxworktime)) {
 
 		go func() {
-			var newcachedata StandardcmCache
-			newcachedata.D = cachedata.D
-			newcachedata.L = nowtime
-			newcachedata.LW = nowtime
-			newcachedata.W = true
-			newcachedata.Wait = false
+			var newCacheData StandardcmCache
+			newCacheData.D = cacheData.D
+			newCacheData.L = nowtime
+			newCacheData.LW = nowtime
+			newCacheData.W = true
+			newCacheData.Wait = false
 
-			err := cm.rdb.Set(cm.ctx, key, public.BuildJson(newcachedata), time.Duration(maxalivetime)).Err()
+			err := cm.rdb.Set(cm.ctx, key, public.BuildJson(newCacheData), time.Duration(maxalivetime)).Err()
 			if err != nil {
 				log.DebugError("set value failed", err)
 			}
@@ -207,31 +214,37 @@ func (cm *CacheManager) GetCache(key string, newcachefunc NewCacheFunc, configti
 				}
 			}()
 
-			newdata := newcachefunc()
+			newData, err := newCacheFunc()
+			if err != nil {
+				log.DebugError("set value failed", err)
+				return
+			}
 
-			newdatastr := public.BuildJson(newdata)
+			newDataStr := public.BuildJson(newData)
 
 			nowtime = public.NowTimeS()
 
-			newcachedata.D = newdatastr
-			newcachedata.L = nowtime
-			newcachedata.LW = 0
-			newcachedata.W = false
-			newcachedata.Wait = false
+			newCacheData.D = newDataStr
+			newCacheData.L = nowtime
+			newCacheData.LW = 0
+			newCacheData.W = false
+			newCacheData.Wait = false
 
-			err = cm.rdb.Set(cm.ctx, key, public.BuildJson(newcachedata), time.Duration(maxalivetime)).Err()
+			err = cm.rdb.Set(cm.ctx, key, public.BuildJson(newCacheData), time.Duration(maxalivetime)).Err()
 			if err != nil {
 				log.DebugError("set value failed", err)
-
+				return
 			}
 		}()
 
-		return cachedata.D
+		ret = cacheData.D
+		return
 	}
 
-	//log.DebugLog("nowtime - cachedata.L: ", (nowtime - cachedata.L), "    forceupdatetime:", forceupdatetime)
+	//log.DebugLog("nowtime - cacheData.L: ", (nowtime - cacheData.L), "    forceupdatetime:", forceupdatetime)
 
-	return cachedata.D
+	ret = cacheData.D
+	return
 }
 
 func (cm *CacheManager) DelCache(key string) {
@@ -249,12 +262,12 @@ func SetCache(key string, value interface{}, configtime ...int64) {
 	cacheManager.SetCache(key, value, configtime...)
 }
 
-func GetCache(key string, newcachefunc NewCacheFunc, configtime ...int64) string {
+func GetCache(key string, newCacheFunc NewCacheFunc, configtime ...int64) (string, error) {
 	//configtime[0]	forceupdatetime
 	//configtime[1]	maxworktime
 	//configtime[2]	maxalivetime
 
-	return cacheManager.GetCache(key, newcachefunc, configtime...)
+	return cacheManager.GetCache(key, newCacheFunc, configtime...)
 }
 
 func DelCache(key string) {
