@@ -72,7 +72,7 @@ func (rm *RouteManager) RoutePost(api string, handler interface{}) *Route {
 	wrapper := func(ctx *context.Context, data []byte) (interface{}, error) {
 
 		req := reflect.New(reqType.Elem()).Interface()
-		log.DebugError(req)
+		// log.DebugError(req)
 
 		err := json.Unmarshal(data, req)
 
@@ -235,8 +235,8 @@ func (r *Route) Middle(handler interface{}) *Route {
 			return
 		}
 
-		userdata := func(data interface{}) map[string]string {
-			result := make(map[string]string)
+		userdata := func(data interface{}) map[string]interface{} {
+			result := make(map[string]interface{})
 
 			v := reflect.ValueOf(data)
 			if v.Kind() == reflect.Ptr {
@@ -258,16 +258,7 @@ func (r *Route) Middle(handler interface{}) *Route {
 					key = field.Name
 				}
 
-				switch value.Kind() {
-				case reflect.String:
-					result[key] = value.String()
-
-				case reflect.Int, reflect.Int64, reflect.Int32:
-					result[key] = strconv.FormatInt(value.Int(), 10)
-
-				case reflect.Bool:
-					result[key] = strconv.FormatBool(value.Bool())
-				}
+				result[key] = value.Interface()
 			}
 
 			return result
@@ -276,12 +267,12 @@ func (r *Route) Middle(handler interface{}) *Route {
 		if len(userdata) != 0 {
 			userinfointerface, exist := c.Get(midDataKey)
 
-			var newuserinfo map[string]string
+			var newuserinfo map[string]interface{}
 
 			if exist {
-				newuserinfo = userinfointerface.(map[string]string)
+				newuserinfo = userinfointerface.(map[string]interface{})
 			} else {
-				newuserinfo = make(map[string]string)
+				newuserinfo = make(map[string]interface{})
 			}
 
 			for key, val := range userdata {
@@ -386,7 +377,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 					return
 				}
 
-				params := make(map[string]string)
+				params := make(map[string]interface{})
 
 				for _, keyval := range route.recvParams {
 					if val, exists := ginContext.GetQuery(keyval); exists {
@@ -402,7 +393,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 
 				midParamsi, _ := ginContext.Get(midDataKey)
 
-				if midParams, ok := midParamsi.(map[string]string); ok {
+				if midParams, ok := midParamsi.(map[string]interface{}); ok {
 					for key, val := range midParams {
 						params[key] = val
 					}
@@ -481,7 +472,7 @@ func (rm *RouteManager) InitRoute(bindaddr string) {
 
 					midParamsi, _ := ginContext.Get(midDataKey)
 
-					if midParams, ok := midParamsi.(map[string]string); ok {
+					if midParams, ok := midParamsi.(map[string]interface{}); ok {
 						for key, val := range midParams {
 							tmpmap[key] = val
 						}
